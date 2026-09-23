@@ -548,4 +548,80 @@ loadState();
 $('s-days').value = S.days; $('s-load').value = S.load; $('s-rent').value = S.rent; $('s-vat').value = S.vat; $('s-act').value = S.actual || '';
 applyLang(initialLang());
 </script>
+  <script>
+(function () {
+  Object.assign(I18N.en, {
+    cat_title: 'Connection type', cat_hint: 'Pick the category printed on your bill. Rates and the demand charge change with it.',
+    cat_A: 'Home (LT-A, residential)', cat_E: 'Shop / office (LT-E, commercial)', cat_C1: 'Small factory (LT-C1)',
+    cat_B: 'Irrigation pump (LT-B)', cat_D1: 'School / hospital / charity (LT-D1)', cat_D2: 'Street light / water pump (LT-D2)', cat_T: 'Temporary connection (LT-T)',
+    cat_peak: 'Share of use during peak hours (5pm–11pm)', cat_peak_hint: 'Rough estimate. If most use is daytime or off-peak, keep this low.',
+    cat_note: 'LT-E and LT-C1 have separate peak and off-peak rates. This app blends them using the peak share above, since it does not track time of use.'
+  });
+  Object.assign(I18N.bn, {
+    cat_title: 'সংযোগের ধরন', cat_hint: 'আপনার বিলে ছাপানো ক্যাটাগরিটি বেছে নিন। এতে রেট ও ডিমান্ড চার্জ বদলে যাবে।',
+    cat_A: 'বাসা (LT-A, আবাসিক)', cat_E: 'দোকান / অফিস (LT-E, বাণিজ্যিক)', cat_C1: 'ছোট কারখানা (LT-C1)',
+    cat_B: 'সেচ পাম্প (LT-B)', cat_D1: 'স্কুল / হাসপাতাল / দাতব্য (LT-D1)', cat_D2: 'রাস্তার বাতি / পানির পাম্প (LT-D2)', cat_T: 'সাময়িক সংযোগ (LT-T)',
+    cat_peak: 'পিক আওয়ারে (বিকেল ৫টা–রাত ১১টা) ব্যবহারের অংশ', cat_peak_hint: 'মোটামুটি হিসাব। বেশিরভাগ ব্যবহার দিনে বা অফ-পিকে হলে এটি কম রাখুন।',
+    cat_note: 'LT-E ও LT-C1-এ আলাদা পিক ও অফ-পিক রেট আছে। এই অ্যাপ সময় অনুযায়ী ব্যবহার ট্র্যাক করে না, তাই ওপরের পিক শেয়ার দিয়ে দুটি রেট মিশিয়ে দেখায়।'
+  });
+
+  const CATS = {
+    A:  {label: 'cat_A',  demand: 42,  kind: 'slab'},
+    E:  {label: 'cat_E',  demand: 90,  kind: 'peak', peak: 18.43, off: 13.82},
+    C1: {label: 'cat_C1', demand: 48,  kind: 'peak', peak: 15.27, off: 11.45},
+    B:  {label: 'cat_B',  demand: 42,  kind: 'flat', rate: 6.04},
+    D1: {label: 'cat_D1', demand: 60,  kind: 'flat', rate: 9.05},
+    D2: {label: 'cat_D2', demand: 90,  kind: 'flat', rate: 11.46},
+    T:  {label: 'cat_T',  demand: 120, kind: 'flat', rate: 23.81}
+  };
+  if (S.cat === undefined) S.cat = 'A';
+  if (S.peak === undefined) S.peak = 30;
+
+  function catDemand() { return (CATS[S.cat] || CATS.A).demand; }
+  function catEnergy(u) {
+    const c = CATS[S.cat] || CATS.A;
+    if (c.kind === 'slab') return energy(u);
+    if (c.kind === 'flat') return u * c.rate;
+    const p = Math.min(100, Math.max(0, S.peak)) / 100;
+    return u * (c.peak * p + c.off * (1 - p));
+  }
+  billFor = function (u) {
+    const e = Math.round(catEnergy(u) * 100) / 100, d = S.load * catDemand(), r = S.rent, base = e + d + r;
+    const vat = Math.round(base * S.vat / 100);
+    return {e, d, r, vat, total: base + vat};
+  };
+
+  const card = document.createElement('div'); card.className = 'card'; card.id = 'sec-cat';
+  card.innerHTML =
+    '<h2 data-i="cat_title"></h2><small data-i="cat_hint"></small>' +
+    '<label for="s-cat"></label><select id="s-cat">' + Object.keys(CATS).map(k => `<option value="${k}">${I18N.en[CATS[k].label]}</option>`).join('') + '</select>' +
+    '<div id="cat-peakbox" style="display:none">' +
+      '<label for="s-peak" data-i="cat_peak"></label><input id="s-peak" type="range" min="0" max="100" step="5">' +
+      '<div class="rv"><span id="cat-peakv"></span><small data-i="cat_peak_hint"></small></div>' +
+    '</div>' +
+    '<small style="margin-top:8px" data-i="cat_note"></small>';
+  const bt = document.getElementById('sec-bill');
+  bt.parentNode.insertBefore(card, bt);
+
+  function texts() {
+    card.querySelectorAll('[data-i]').forEach(e => { e.textContent = tr(e.dataset.i); });
+    const sel = document.getElementById('s-cat'), keep = sel.value || S.cat;
+    sel.innerHTML = Object.keys(CATS).map(k => `<option value="${k}">${tr(CATS[k].label)}</option>`).join('');
+    sel.value = keep;
+  }
+  function paint() {
+    const c = CATS[S.cat] || CATS.A;
+    document.getElementById('cat-peakbox').style.display = c.kind === 'peak' ? 'block' : 'none';
+    document.getElementById('cat-peakv').textContent = S.peak + '%';
+  }
+  document.getElementById('s-cat').value = S.cat;
+  document.getElementById('s-peak').value = S.peak;
+  document.getElementById('s-cat').addEventListener('change', e => { S.cat = e.target.value; paint(); refresh(); });
+  document.getElementById('s-peak').addEventListener('input', e => { S.peak = +e.target.value; paint(); refresh(); });
+
+  const oldLang = applyLang;
+  applyLang = l => { oldLang(l); texts(); paint(); };
+  texts(); paint(); refresh();
+})();
+</script>
 </body></html>
